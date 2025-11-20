@@ -1,0 +1,14 @@
+{
+  "ablation": {
+    "description": "focal_loss",
+    "skip_codeae": false,
+    "skip_pathway": false,
+    "skip_subtype_finetune": false,
+    "skip_subtype_weighting": false
+  },
+  "test": {
+    "auprc": 0.6694635073886159,
+    "auroc": 0.6611570247933884,
+    "f1": 0.0
+  }
+}

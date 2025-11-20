@@ -1,0 +1,23 @@
+{
+  "pathway": {
+    "use_progeny": true,
+    "use_dorothea": false,
+    "use_hallmark": true,
+    "hallmark_threads": 2
+  },
+  "codeae": {
+    "pretrain_epochs": 5,
+    "adv_epochs": 20,
+    "batch_size": 128,
+    "latent_dim": 64,
+    "encoder_hidden_dims": [256, 128],
+    "classifier_hidden_dims": [128, 64]
+  },
+  "training": {
+    "max_epochs": 12,
+    "patience": 3,
+    "batch_size": 256,
+    "hidden_dims": [512, 256, 128],
+    "loss_strategy": "focal"
+  }
+}

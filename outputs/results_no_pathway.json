@@ -1,0 +1,14 @@
+{
+  "ablation": {
+    "description": "no_pathway",
+    "skip_codeae": false,
+    "skip_pathway": true,
+    "skip_subtype_finetune": false,
+    "skip_subtype_weighting": false
+  },
+  "test": {
+    "auprc": 0.5434965134596861,
+    "auroc": 0.5794306703397613,
+    "f1": 0.6666666666666666
+  }
+}
