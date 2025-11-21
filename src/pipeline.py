@@ -5,8 +5,11 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from sklearn.manifold import TSNE
 from torch.utils.data import DataLoader
 
 from src.config import PipelineConfig, AblationConfig
@@ -62,12 +65,16 @@ class ResearchPipeline:
             embeddings_pat = CodeAEManager.encode(encoder, patient_expr)
             embeddings_cell = CodeAEManager.encode(encoder, cell_expr)
             if not np.isfinite(embeddings_pat.to_numpy()).all() or not np.isfinite(embeddings_cell.to_numpy()).all():
+                logging.warning("CODE-AE 输出包含 NaN/Inf，回退到 PCA。")
                 use_codeae = False
                 embeddings_pat = None
                 embeddings_cell = None
         if not use_codeae:
             embeddings_pat = pca_project(patient_expr)
             embeddings_cell = pca_project(cell_expr)
+
+        tsne_tag = "codeae" if use_codeae else "pca"
+        self._plot_tsne(embeddings_cell, embeddings_pat, tsne_tag, ablation.description)
 
         pat_matrix = build_context_feature_matrix(
             patient_expr,
@@ -219,21 +226,117 @@ class ResearchPipeline:
         loaders = self._build_loaders(splits, context_matrix, drug_dict, subtype_probs.shape[1], ablation)
 
         sample_drug = next(iter(drug_dict.values()))
+        subtype_dim = subtype_probs.shape[1]
+        trainer = Trainer(self.cfg.training)
+        all_labels = [rec.label for rec in splits["train"]]
+        num_pos = sum(all_labels)
+        num_neg = len(all_labels) - num_pos
+        calculated_pos_weight = num_neg / num_pos if num_pos > 0 else 1.0
+        logging.info(
+            "统计样本分布: Neg=%d, Pos=%d, 自动设置 pos_weight=%.4f",
+            num_neg,
+            num_pos,
+            calculated_pos_weight,
+        )
         model = PairSynergyNet(
             drug_dim=len(sample_drug),
             context_dim=context_matrix.shape[1],
             hidden_dims=self.cfg.training.hidden_dims,
             dropout=self.cfg.training.dropout,
-        ).to(Trainer(self.cfg.training).device)
-        trainer = Trainer(self.cfg.training)
-        model = trainer.train(loaders["train"], loaders["val"], model, pos_weight=3.0, gamma=self.cfg.training.focal_gamma)
+            subtype_dim=subtype_dim,
+        ).to(trainer.device)
+        model = trainer.train(
+            loaders["train"],
+            loaders["val"],
+            model,
+            pos_weight=calculated_pos_weight,
+            gamma=self.cfg.training.focal_gamma,
+        )
         preds = trainer._predict(model, loaders["test"])
         metrics_test = compute_metrics(preds["y_true"], preds["y_score"])
         return {"test": metrics_test, "ablation": ablation.__dict__}
 
+    def _plot_tsne(
+        self,
+        cell_embeddings: pd.DataFrame,
+        pat_embeddings: pd.DataFrame,
+        mode_tag: str,
+        ablation_name: str,
+    ) -> None:
+        """绘制嵌入空间的 t-SNE，用以观察域对齐情况。"""
+
+        try:
+            logging.info(
+                "正在绘制 t-SNE (%s, %s)，维度 cell=%s, patient=%s",
+                ablation_name,
+                mode_tag,
+                cell_embeddings.shape,
+                pat_embeddings.shape,
+            )
+            combined = pd.concat(
+                [
+                    cell_embeddings.assign(domain="cell_line"),
+                    pat_embeddings.assign(domain="patient"),
+                ],
+                axis=0,
+            )
+            max_points = min(3000, len(combined))
+            sampled = combined.sample(n=max_points, random_state=self.cfg.random_seed)
+            labels = sampled["domain"].values
+            data_for_tsne = (
+                sampled.drop(columns=["domain"])
+                .apply(pd.to_numeric, errors="coerce")
+                .fillna(0.0)
+            )
+            tsne = TSNE(
+                n_components=2,
+                random_state=self.cfg.random_seed,
+                perplexity=30,
+                init="pca",
+                learning_rate="auto",
+            )
+            emb = tsne.fit_transform(data_for_tsne.to_numpy(dtype=np.float32))
+            plt.figure(figsize=(8, 6))
+            colors = {"cell_line": "#1f77b4", "patient": "#ff7f0e"}
+            alphas = {"cell_line": 0.4, "patient": 0.7}
+            for domain in ["cell_line", "patient"]:
+                mask = labels == domain
+                plt.scatter(
+                    emb[mask, 0],
+                    emb[mask, 1],
+                    s=15,
+                    alpha=alphas[domain],
+                    c=colors[domain],
+                    label="Cell Line" if domain == "cell_line" else "Patient",
+                    edgecolors="none",
+                )
+            plt.title(f"Domain Alignment t-SNE - {ablation_name} [{mode_tag.upper()}]")
+            plt.legend()
+            plt.grid(True, linestyle="--", alpha=0.3)
+            ensure_dir(self.paths.output_dir)
+            save_path = self.paths.output_dir / f"tsne_{ablation_name}_{mode_tag}.png"
+            plt.tight_layout()
+            plt.savefig(save_path, dpi=300)
+            plt.close()
+            logging.info("t-SNE 可视化已保存：%s", save_path)
+        except Exception as exc:  # pragma: no cover
+            logging.warning("t-SNE 可视化失败：%s", exc, exc_info=True)
+
     def run(self, run_ablations: bool = False) -> None:
         """执行主实验及可选消融实验，并将结果写入 outputs。"""
 
+        desc_map = {
+            "full": "完整模型 (全部模块开启)",
+            "no_pathway": "消融：移除通路/TF 特征",
+            "no_codeae": "消融：移除 CODE-AE，使用 PCA",
+            "no_subtype_finetune": "消融：移除亚型微调（占位）",
+            "no_subtype_weight": "消融：移除亚型权重",
+            "focal_loss": "消融：替换损失函数以验证 Focal Loss",
+        }
+
+        logging.info("=" * 60)
+        logging.info("正在运行：%s", desc_map.get(self.cfg.ablation.description, self.cfg.ablation.description))
+        logging.info("=" * 60)
         base = self._run_single(self.cfg.ablation)
         save_json(base, self.paths.output_dir / f"results_{self.cfg.ablation.description}.json")
         if not run_ablations:
@@ -246,5 +349,8 @@ class ResearchPipeline:
             AblationConfig(description="focal_loss"),
         ]
         for abl in ablations:
+            logging.info("\n" + "=" * 60)
+            logging.info("正在运行：%s", desc_map.get(abl.description, abl.description))
+            logging.info("=" * 60)
             result = self._run_single(abl)
             save_json(result, self.paths.output_dir / f"results_{abl.description}.json")

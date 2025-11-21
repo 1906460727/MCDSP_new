@@ -79,8 +79,8 @@ class TrainingConfig:
     val_ratio: float = 0.2
     test_ratio: float = 0.1
     ensure_balanced_test: bool = True
-    cell_synergy_column: str = "synergy_zip"
-    cell_synergy_threshold: float = 10.0
+    cell_synergy_column: str = "synergy_bliss"
+    cell_synergy_threshold: float = 0.0
     patient_label_column: str = "synergy_label"
     batch_size: int = 512
     lr: float = 2e-4

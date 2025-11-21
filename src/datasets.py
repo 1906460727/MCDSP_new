@@ -61,7 +61,10 @@ class CombinationBuilder:
             score = row[metric]
             if pd.isna(score):
                 continue
-            label = int(score >= self.cfg.cell_synergy_threshold)
+            if self.cfg.cell_synergy_column == "synergy_bliss":
+                label = int(float(score) > self.cfg.cell_synergy_threshold)
+            else:
+                label = int(float(score) >= self.cfg.cell_synergy_threshold)
             records.append(
                 CombinationRecord(
                     drug_a=str(row["drug_row"]),
@@ -148,7 +151,11 @@ class CombinationDataset(Dataset):
         subtype_dim: int,
     ):
         self.records = records
-        self.context_matrix = context_matrix
+        context_array = context_matrix.to_numpy(dtype=np.float32, copy=True)
+        self.context_lookup: Dict[str, torch.Tensor] = {
+            ctx_id: torch.from_numpy(context_array[i])
+            for i, ctx_id in enumerate(context_matrix.index)
+        }
         self.drug_dict = drug_dict
         self.ablation = ablation
         self.subtype_dim = subtype_dim
@@ -160,8 +167,8 @@ class CombinationDataset(Dataset):
         record = self.records[idx]
         drug_a = self.drug_dict[canonicalise_drug_name(record.drug_a)]
         drug_b = self.drug_dict[canonicalise_drug_name(record.drug_b)]
-        context_vec = self.context_matrix.loc[record.context_id].to_numpy(dtype=np.float32)
-        context_vec = np.nan_to_num(context_vec, nan=0.0, posinf=0.0, neginf=0.0)
+        context_vec = self.context_lookup[record.context_id]
+        context_vec = torch.nan_to_num(context_vec, nan=0.0, posinf=0.0, neginf=0.0)
         if record.subtype_probs is None or self.ablation.skip_subtype_weighting:
             subtype = np.zeros(self.subtype_dim, dtype=np.float32)
         else:
@@ -169,7 +176,7 @@ class CombinationDataset(Dataset):
         return (
             torch.from_numpy(drug_a),
             torch.from_numpy(drug_b),
-            torch.from_numpy(context_vec),
+            context_vec.clone(),
             torch.from_numpy(subtype),
             torch.tensor(record.label, dtype=torch.float32),
             record.domain,

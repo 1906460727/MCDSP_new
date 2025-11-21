@@ -8,6 +8,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import torch
+
 from src.config import PipelineConfig
 from src.pipeline import ResearchPipeline
 
@@ -41,6 +43,11 @@ def load_config(path: Path | None) -> PipelineConfig:
 def main() -> None:
     args = parse_args()
     logging.basicConfig(level=getattr(logging, args.log_level.upper(), logging.INFO))
+    if torch.cuda.is_available():
+        device_name = torch.cuda.get_device_name(torch.cuda.current_device())
+        logging.info("检测到 GPU，可使用 CUDA 加速：%s", device_name)
+    else:
+        logging.info("未检测到可用 GPU，将使用 CPU 运行。")
     cfg = load_config(args.config)
     pipeline = ResearchPipeline(cfg)
     pipeline.run(run_ablations=args.run_ablations)

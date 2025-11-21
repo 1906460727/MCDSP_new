@@ -1,14 +1,16 @@
 {
-  "ablation": {
-    "description": "full",
-    "skip_codeae": false,
-    "skip_pathway": false,
-    "skip_subtype_finetune": false,
-    "skip_subtype_weighting": false
-  },
   "test": {
-    "auprc": 0.6782959919700489,
-    "auroc": 0.7373737373737373,
-    "f1": 0.7631578947368421
+    "auroc": 0.7548209366391184,
+    "auprc": 0.7200226497191291,
+    "f1": 0.7654320987654321,
+    "acc": 0.7121212121212122,
+    "best_threshold": 0.26011016964912415
+  },
+  "ablation": {
+    "skip_pathway": false,
+    "skip_codeae": false,
+    "skip_subtype_finetune": false,
+    "skip_subtype_weighting": false,
+    "description": "full"
   }
 }

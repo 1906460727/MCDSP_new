@@ -1,14 +1,16 @@
 {
-  "ablation": {
-    "description": "focal_loss",
-    "skip_codeae": false,
-    "skip_pathway": false,
-    "skip_subtype_finetune": false,
-    "skip_subtype_weighting": false
-  },
   "test": {
-    "auprc": 0.6694635073886159,
-    "auroc": 0.6611570247933884,
-    "f1": 0.0
+    "auroc": 0.753902662993572,
+    "auprc": 0.76471195117308,
+    "f1": 0.759493670886076,
+    "acc": 0.7121212121212122,
+    "best_threshold": 2.045658902716241e-06
+  },
+  "ablation": {
+    "skip_pathway": false,
+    "skip_codeae": false,
+    "skip_subtype_finetune": false,
+    "skip_subtype_weighting": false,
+    "description": "focal_loss"
   }
 }
